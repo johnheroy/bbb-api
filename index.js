@@ -2,6 +2,7 @@ var GtfsRealtimeBindings = require('gtfs-realtime-bindings');
 var request = require('request');
 var Promise = require('bluebird');
 var csv = require('csv');
+var moment = require('moment');
 
 var stopsResolver = Promise.pending();
 var stopTimesResolver = Promise.pending();
@@ -97,10 +98,13 @@ Promise
       var closestStopIndex = getClosestStop(34.0361974, -118.4718219);
       var closestStopId = STOPS[closestStopIndex].stop_id;
       console.log('closest stop is', STOPS[closestStopIndex].stop_name);
-      
+
       // Get arrivals for that stop
       var arrivals = STOP_TIMES.filter(function(element, index) {
         return element.stop_id === closestStopId;
+      }).sort(function(stopTime1, stopTime2) {
+        return moment(stopTime1.arrival_time, 'HH:mm:ss')
+            .diff(moment(stopTime2.arrival_time, 'HH:mm:ss'));
       });
       console.log(arrivals);
     });
@@ -109,4 +113,4 @@ Promise
 
 
 // find delays by that trip ID
-// getTripUpdates('613771');
+getTripUpdates('614519');
