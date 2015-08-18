@@ -102,9 +102,11 @@ Promise
       // Get arrivals for that stop
       var arrivals = STOP_TIMES.filter(function(element, index) {
         return element.stop_id === closestStopId;
+      }).map(function(stopTime) {
+        stopTime.arrival_time = moment(stopTime.arrival_time, 'HH:mm:ss');
+        return stopTime;
       }).sort(function(stopTime1, stopTime2) {
-        return moment(stopTime1.arrival_time, 'HH:mm:ss')
-            .diff(moment(stopTime2.arrival_time, 'HH:mm:ss'));
+        return stopTime1.arrival_time.diff(stopTime2.arrival_time);
       });
       console.log(arrivals);
     });
