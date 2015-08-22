@@ -20,6 +20,7 @@
     "gtfs-realtime-bindings": "0.0.4",
     "moment": "^2.10.6",
     "protobufjs": "^4.0.0",
-    "request": "^2.60.0"
+    "request": "^2.60.0",
+    "underscore": "^1.8.3"
   }
 }

@@ -4,6 +4,7 @@ var request = require('request');
 var Promise = require('bluebird');
 var csv = require('csv');
 var moment = require('moment');
+var _ = require('underscore');
 
 // Resolvers to track loading the static GTFS data.
 var calendarResolver = Promise.pending();
@@ -62,37 +63,60 @@ function loadStaticData(table, resolver, url) {
   request(url).pipe(parser);
 }
 
+// Maps from trip_id's and stop_id's to arrival times.
 loadStaticData(
     'STOP_TIMES', 
     stopTimesResolver, 
     'http://gtfs.bigbluebus.com/parsed/stop_times.txt');
+
+// Maps from stop_id's to stop names and GPS coords.
 loadStaticData(
     'STOPS',
     stopsResolver,
     'http://gtfs.bigbluebus.com/parsed/stops.txt');
 
+// Maps from service_id's to days of the week.
+loadStaticData(
+    'CALENDAR',
+    calendarResolver,
+    'http://gtfs.bigbluebus.com/parsed/calendar.txt');
 
+// Maps from route_id's to route names for funsies.
+loadStaticData(
+    'ROUTES',
+    routesResolver,
+    'http://gtfs.bigbluebus.com/parsed/routes.txt');
 
-function loadCalendar() {
+// Maps from route_id's to service_id's.
+loadStaticData(
+    'TRIPS',
+    tripsResolver,
+    'http://gtfs.bigbluebus.com/parsed/trips.txt');
 
-}
+var staticDataLoaded = Promise.all([
+  stopTimesResolver.promise,
+  stopsResolver.promise,
+  calendarResolver.promise,
+  routesResolver.promise,
+  tripsResolver.promise
+]);
 
 // Find closest stop (or 2 stops?) for a given gps coordinate
 function getClosestStop(lat, lon) {
   var minDistance = 100;
   var closestStopIndex = -1;
-  console.log('stops', STATIC_DATA.STOPS);
+  // console.log('stops', STATIC_DATA.STOPS);
 
   for (var i = 0; i < STATIC_DATA.STOPS.length; i++) {
     var stop = STATIC_DATA.STOPS[i];
     var changeLat = lat - stop.stop_lat;
     var changeLon = lon - stop.stop_lon;
     var distance = Math.sqrt(changeLat * changeLat + changeLon * changeLon);
-    console.log('distance calcd is', distance);
+    // console.log('distance calcd is', distance);
     if (distance < minDistance) {
       minDistance = distance;
       closestStopIndex = i;
-      console.log('closest stop now', i);
+      // console.log('closest stop now', i);
     }
   }
 
@@ -100,38 +124,98 @@ function getClosestStop(lat, lon) {
 }
 
 
-Promise
-    .all([stopTimesResolver.promise, stopsResolver.promise])
-    .then(function() {
-      console.log('stops and stop times loaded!');
+/**
+ * @enum {string}
+ */
+var WEEKDAYS = {
+  1: 'monday',
+  2: 'tuesday',
+  3: 'wednesday',
+  4: 'thursday',
+  5: 'friday',
+  6: 'saturday',
+  7: 'sunday'
+};
 
-      // Find closest stop based on GPS coordinates, get stop_id
-      var closestStopIndex = getClosestStop(34.0361974, -118.4718219);
-      var closestStopId = STATIC_DATA.STOPS[closestStopIndex].stop_id;
-      console.log('closest stop is', STATIC_DATA.STOPS[closestStopIndex].stop_name);
 
-      // Get arrivals for that stop
-      var sortedArrivals = STATIC_DATA.STOP_TIMES.filter(function(element, index) {
-        return element.stop_id === closestStopId;
-      }).map(function(stopTime) {
-        stopTime.arrival_time = moment(stopTime.arrival_time, 'HH:mm:ss');
-        return stopTime;
-      }).sort(function(stopTime1, stopTime2) {
-        return stopTime1.arrival_time.diff(stopTime2.arrival_time);
-      });
-      
-      // Now get the arrivals within say 10 minutes before now and 30 minutes
-      // from now.
-      var tenMinutesAgo = moment().subtract(10, 'minutes');
-      var inThirtyMinutes = moment().add(30, 'minutes');
+staticDataLoaded.then(function() {
+  console.log('stops and stop times loaded!');
 
-      var latestArrivals = sortedArrivals.filter(function(arrival) {
-        return arrival.arrival_time.isBetween(tenMinutesAgo, inThirtyMinutes);
-      });
+  // Find closest stop based on GPS coordinates, get stop_id
+  var closestStopIndex = getClosestStop(34.0361974, -118.4718219);
+  var closestStopId = STATIC_DATA.STOPS[closestStopIndex].stop_id;
+  getLatestArrivalsForStop(closestStopId);
+});
 
-      console.log('latest arrivals!');
-      console.log(latestArrivals);
+
+function getStop(stopId) {
+  var stops = STATIC_DATA.STOPS.filter(function(stop) {
+    return stop.stop_id === stopId;
+  });
+  return stops[0];
+} 
+
+
+function getLatestArrivalsForStop(stopId) {
+  staticDataLoaded.then(function() {
+    // Get ALL arrivals for that stop, sorted chronologically.
+    var sortedArrivals = STATIC_DATA.STOP_TIMES.filter(function(element, index) {
+      return element.stop_id === stopId;
+    }).map(function(stopTime) {
+      stopTime.arrival_time = moment(stopTime.arrival_time, 'HH:mm:ss');
+      return stopTime;
+    }).sort(function(stopTime1, stopTime2) {
+      return stopTime1.arrival_time.diff(stopTime2.arrival_time);
     });
+    
+    // Now get the arrivals within say 10 minutes before now and 30 minutes
+    // from now.
+    var now = moment();
+    var tenMinutesAgo = now.clone().subtract(10, 'minutes');
+    var inThirtyMinutes = now.clone().add(30, 'minutes');
+    var latestArrivals = sortedArrivals.filter(function(arrival) {
+      return arrival.arrival_time.isBetween(tenMinutesAgo, inThirtyMinutes);
+    });
+
+    // Now get the arrivals for TODAY.
+    var todaysArrivals = latestArrivals.filter(function(arrival) {
+      var trip = STATIC_DATA.TRIPS.filter(function(trip) {
+        return trip.trip_id === arrival.trip_id;
+      })[0];
+      var service = STATIC_DATA.CALENDAR.filter(function(service) {
+        return service.service_id === trip.service_id;
+      })[0];
+      return service[WEEKDAYS[now.weekday()]] === '1' &&
+        now.isBefore(moment(service.end_date, 'YYYYMMDD').add(1, 'day')) &&
+        now.isAfter(moment(service.start_date, 'YYYYMMDD'));
+    });
+
+    // Make sure we have the relevant data next in freshly created objects
+    // which we can mutate without consequence (i.e. delays).
+    var cleanTodaysArrivals = todaysArrivals.map(function(arrival) {
+      var cleanedArrival = {};
+
+      // Construct and return a totally new object that we can manipulate.
+      cleanedArrival.arrival_time = arrival.arrival_time.clone();
+      cleanedArrival.stop = getStop(arrival.stop_id).stop_name;
+      cleanedArrival.trip_id = arrival.trip_id;
+
+      var trip = STATIC_DATA.TRIPS.filter(function(trip) {
+        return trip.trip_id === arrival.trip_id;
+      })[0];
+      cleanedArrival.headsign = trip.trip_headsign;
+      cleanedArrival.route = STATIC_DATA.ROUTES.filter(function(route) {
+        return route.route_id === trip.route_id;
+      })[0].route_short_name;
+
+      return cleanedArrival;
+    });
+
+    // Now adjust for delays.
+
+    console.log('todays arrivals', cleanTodaysArrivals);
+  });
+}
 
 
 
