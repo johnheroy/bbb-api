@@ -22,25 +22,41 @@ var realTimeRequestSettings = {
   encoding: null
 };
 
-// Map array of trip IDs to array of delays in seconds
-function getTripUpdates(tripId) {
+// Map array of trip IDs to array of delays in seconds. Returns a promise
+function getTripUpdates(tripIds) {
+  var resolver = Promise.pending();
+
   request(realTimeRequestSettings, function (error, response, body) {
     if (!error && response.statusCode == 200) {
       var feed = GtfsRealtimeBindings.FeedMessage.decode(body);
 
+      var delays = {};
+      // TODO: replace with something which is better than O(m * n).
       for (var i = 0; i < feed.entity.length; i++) {
-        if (feed.entity[i].trip_update.trip.trip_id === tripId) {
-          // TODO: replace with a real API.
-          console.log(
-              'delay for trip ID',
-              tripId,
-              feed.entity[i].trip_update.stop_time_update[0].arrival.delay,
-              'seconds');
-          return;
+        for (var j = 0; j < tripIds.length; j++) {
+          var tripId = tripIds[j];
+          if (feed.entity[i].trip_update.trip.trip_id === tripId) {
+            // TODO: replace with a real API.
+            delays[tripId] =
+                feed.entity[i].trip_update.stop_time_update[0].arrival.delay;
+            // console.log(
+            //     'delay for trip ID',
+            //     tripId,
+            //     feed.entity[i].trip_update.stop_time_update[0].arrival.delay,
+            //     'seconds');
+            // return;
+          }
         }
       }
+
+      resolver.resolve(delays);
+      return;
     }
+
+    resolver.reject();
   });
+
+  return resolver.promise;
 }
 
 
@@ -156,7 +172,10 @@ function getStop(stopId) {
 } 
 
 
+// Returns a Promise.
 function getLatestArrivalsForStop(stopId) {
+  var arrivalsResolver = Promise.pending();
+
   staticDataLoaded.then(function() {
     // Get ALL arrivals for that stop, sorted chronologically.
     var sortedArrivals = STATIC_DATA.STOP_TIMES.filter(function(element, index) {
@@ -171,8 +190,8 @@ function getLatestArrivalsForStop(stopId) {
     // Now get the arrivals within say 10 minutes before now and 30 minutes
     // from now.
     var now = moment();
-    var tenMinutesAgo = now.clone().subtract(10, 'minutes');
-    var inThirtyMinutes = now.clone().add(30, 'minutes');
+    var tenMinutesAgo = now.clone().subtract(15, 'minutes');
+    var inThirtyMinutes = now.clone().add(45, 'minutes');
     var latestArrivals = sortedArrivals.filter(function(arrival) {
       return arrival.arrival_time.isBetween(tenMinutesAgo, inThirtyMinutes);
     });
@@ -212,13 +231,45 @@ function getLatestArrivalsForStop(stopId) {
     });
 
     // Now adjust for delays.
+    var tripIds = cleanTodaysArrivals.map(function(arrival) {
+      return arrival.trip_id;
+    });
+    getTripUpdates(tripIds).then(function(delays) {
+      console.log('tripIds', tripIds);
+      console.log('delays', delays);
+      cleanTodaysArrivals.forEach(function(arrival) {
+        var delayInSeconds = parseInt(delays[arrival.trip_id]);
+        console.log('delay', delayInSeconds);
+        arrival.adjusted_arrival_time =
+            arrival.arrival_time.clone().add(delayInSeconds, 's');
+      });
 
-    console.log('todays arrivals', cleanTodaysArrivals);
+      // Make sure now that we have the adjusted arrival that we are only
+      // looking at upcoming buses.
+      var arrivals = cleanTodaysArrivals.filter(function(arrival) {
+        return arrival.adjusted_arrival_time.isAfter(now);
+      });
+
+      // Resort.
+      arrivals.sort(function(arrival1, arrival2) {
+        return arrival1.adjusted_arrival_time.diff(arrival2.adjusted_arrival_time);
+      });
+
+      // Clean up time stuff.
+      arrivals.forEach(function(arrival) {
+        arrival.fromNow = arrival.adjusted_arrival_time.fromNow();
+        arrival.arrival_time = arrival.adjusted_arrival_time.toDate();
+        delete arrival['adjusted_arrival_time'];
+      });
+
+      arrivalsResolver.resolve(arrivals);
+    });
   });
+
+  return arrivalsResolver.promise;
 }
 
 
-
-
-// find delays by that trip ID
-getTripUpdates('614519');
+getLatestArrivalsForStop('323').then(function(arrivals) {
+  console.log(arrivals);
+});
