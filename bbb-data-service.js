@@ -1,5 +1,5 @@
 module.exports = {
-  getClosestStop: getClosestStop,
+  getClosestStops: getClosestStops,
   getLatestArrivalsForStop: getLatestArrivalsForStop
 };
 
@@ -116,25 +116,17 @@ var staticDataLoaded = Promise.all([
 ]);
 
 // Find closest stop (or 2 stops?) for a given gps coordinate
-function getClosestStop(lat, lon) {
-  var minDistance = 100;
-  var closestStopIndex = -1;
-  // console.log('stops', STATIC_DATA.STOPS);
+function getClosestStops(lat, lon, numStops) {
+  var closestStops = STATIC_DATA.STOPS.slice().sort(function(stop1, stop2) {
+    return getStopDistance(lat, lon, stop1) - getStopDistance(lat, lon, stop2);
+  });
+  return closestStops.slice(0, numStops);
+}
 
-  for (var i = 0; i < STATIC_DATA.STOPS.length; i++) {
-    var stop = STATIC_DATA.STOPS[i];
+function getStopDistance(lat, lon, stop) {
     var changeLat = lat - stop.stop_lat;
     var changeLon = lon - stop.stop_lon;
-    var distance = Math.sqrt(changeLat * changeLat + changeLon * changeLon);
-    // console.log('distance calcd is', distance);
-    if (distance < minDistance) {
-      minDistance = distance;
-      closestStopIndex = stop.stop_id;
-      // console.log('closest stop now', i);
-    }
-  }
-
-  return closestStopIndex;
+    return Math.sqrt(changeLat * changeLat + changeLon * changeLon);
 }
 
 
@@ -154,11 +146,6 @@ var WEEKDAYS = {
 
 staticDataLoaded.then(function() {
   console.log('stops and stop times loaded!');
-
-  // Find closest stop based on GPS coordinates, get stop_id
-  var closestStopIndex = getClosestStop(34.0361974, -118.4718219);
-  var closestStopId = STATIC_DATA.STOPS[closestStopIndex].stop_id;
-  getLatestArrivalsForStop(closestStopId);
 });
 
 
@@ -214,7 +201,6 @@ function getLatestArrivalsForStop(stopId) {
 
       // Construct and return a totally new object that we can manipulate.
       cleanedArrival.arrival_time = arrival.arrival_time.clone();
-      cleanedArrival.stop = getStop(arrival.stop_id).stop_name;
       cleanedArrival.trip_id = arrival.trip_id;
 
       var trip = STATIC_DATA.TRIPS.filter(function(trip) {

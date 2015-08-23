@@ -12,15 +12,29 @@ app.get('/', function(req, res){
   res.sendFile(path.join(__dirname, './demo/index.html'));
 });
 
-app.get('/api/stops', function(req, res) {
+app.get('/api/arrivals', function(req, res) {
   var lat = req.query.lat;
   var lon = req.query.lon;
 
-  var stopId = bbb.getClosestStop(lat, lon);
-  var stops = {};
-  bbb.getLatestArrivalsForStop(stopId).then(function(arrivals) {
-    stops[stopId] = arrivals;
-    res.send(stops);
+  var count = 0;
+  var stops = bbb.getClosestStops(lat, lon, 3);
+
+  stops.forEach(function(stop) {
+    bbb.getLatestArrivalsForStop(stop.stop_id).then(function(arrivals) {
+      stop.arrivals = arrivals;
+
+      count++;
+      if (count === stops.length) {
+        res.send(stops);
+      }
+    });
+
+    delete stop.wheelchair_boarding;
+    delete stop.stop_timezone;
+    delete stop.parent_station;
+    delete stop.location_type;
+    delete stop.stop_url;
+    delete stop.zone_id;
   });
 });
 
