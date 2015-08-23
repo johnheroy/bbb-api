@@ -17,7 +17,18 @@ app.get('/api/arrivals', function(req, res) {
   var lon = req.query.lon;
 
   var count = 0;
-  var stops = bbb.getClosestStops(lat, lon, 3);
+  var stops = bbb.getClosestStops(lat, lon, 3).map(function(stop) {
+    var newStop = {};
+
+    newStop.stop_id = stop.stop_id;
+    newStop.stop_code = stop.stop_code;
+    newStop.stop_name = stop.stop_name;
+    newStop.stop_desc = stop.stop_desc;
+    newStop.stop_lat = stop.stop_lat;
+    newStop.stop_lon = stop.stop_lon;
+
+    return newStop;
+  });
 
   stops.forEach(function(stop) {
     bbb.getLatestArrivalsForStop(stop.stop_id).then(function(arrivals) {
@@ -28,13 +39,6 @@ app.get('/api/arrivals', function(req, res) {
         res.send(stops);
       }
     });
-
-    delete stop.wheelchair_boarding;
-    delete stop.stop_timezone;
-    delete stop.parent_station;
-    delete stop.location_type;
-    delete stop.stop_url;
-    delete stop.zone_id;
   });
 });
 
