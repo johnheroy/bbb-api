@@ -18,7 +18,7 @@ app.get('/api/arrivals', function(req, res) {
   var lon = req.query.lon;
 
   var count = 0;
-  var stops = bbb.getClosestStops(lat, lon, 3).map(function(stop) {
+  var stops = bbb.getClosestStops(lat, lon, 5).map(function(stop) {
     var newStop = {};
 
     newStop.stop_id = stop.stop_id;
