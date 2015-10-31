@@ -13,7 +13,7 @@ app.get('/', function(req, res){
 });
 
 app.get('/api/arrivals', function(req, res) {
-  console.log('new query to arrivals', JSON.stringify(req));
+  console.log('new query to arrivals', JSON.stringify(req.query));
   var lat = req.query.lat;
   var lon = req.query.lon;
 
